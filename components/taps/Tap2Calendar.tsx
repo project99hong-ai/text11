@@ -6,7 +6,6 @@ import { addMonths, getMonthGrid, isSameDay, toISODate } from '../../lib/date'
 import LifeCalendar from '../calendar/LifeCalendar'
 import {
   countEventsInMonth,
-  isWeekend,
   mapEventsToDates,
 } from '../../lib/calendarUtils'
 
@@ -37,6 +36,7 @@ const layerEmoji: Record<Layer, string> = {
 }
 
 const importantTags = ['마감', '발표', '본선', '휴장', '동시만기', '거래정지', 'FOMC', '수출입', '주총시즌', '유의']
+const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ')
 
 export default function Tap2Calendar() {
   const today = new Date()
@@ -110,7 +110,7 @@ export default function Tap2Calendar() {
             <button
               key={layer}
               type="button"
-              className={`flex items-center gap-2 border px-3 py-1.5 text-sm uppercase tracking-[0.2em] ${
+              className={`flex items-center gap-2 border px-3 py-1.5 text-sm uppercase tracking-[0.1em] ${
                 active
                   ? `${layerStyle[layer].text} ${layerStyle[layer].border} font-semibold`
                   : 'border-ink/20 text-ink/60'
@@ -129,18 +129,20 @@ export default function Tap2Calendar() {
             >
               <span>{layerEmoji[layer]}</span>
               <span>{LAYER_LABELS[layer]} ({countsByLayer[layer] ?? 0})</span>
-              {active && <span className="text-xs">✓</span>}
+              {active && <span className="text-base">✓</span>}
             </button>
           )
         })}
       </div>
 
-      <div className="mt-5 grid grid-cols-7 text-lg uppercase tracking-[0.2em] leading-tight text-ink/90">
-        {weekdays.map((day, index) => (
+      <div className="mt-5 grid grid-cols-7 text-base">
+        {weekdays.map((day, colIndex) => (
           <div
             key={day}
-            className={`pb-2 text-lg leading-tight ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-ink/90'}`}
-            style={{ fontSize: '18px' }}
+            className={cn(
+              'pb-2 text-[18px] leading-none uppercase tracking-[0.1em]',
+              colIndex === 0 ? '!text-red-600' : colIndex === 6 ? '!text-blue-600' : 'text-ink/80',
+            )}
           >
             {day}
           </div>
@@ -148,35 +150,45 @@ export default function Tap2Calendar() {
       </div>
       <div className="hairline-dashed" />
 
-      <div className="mt-4 grid grid-cols-7 gap-y-4" style={{ minHeight: '70vh' }}>
+      <div className="mt-4 grid grid-cols-7 gap-y-4 text-base" style={{ minHeight: '70vh' }}>
         {monthCells.map((cell) => {
           const isToday = isSameDay(cell.date, today)
           const isSelected = cell.iso === selectedDate
           const dayEvents = eventsByDate.get(cell.iso) ?? []
           const important = dayEvents.find((event) => event.tag && importantTags.includes(event.tag))
           const dots = dayEvents.filter((event) => !event.tag).slice(0, 3)
-          const weekend = isWeekend(cell.date)
-          const dateNumberClass =
-            cell.date.getDay() === 0
-              ? 'text-red-600'
-              : cell.date.getDay() === 6
-                ? 'text-blue-600'
+          const cellColIndex = cell.date.getDay()
+          const dateNumberColorClass =
+            cellColIndex === 0
+              ? '!text-red-600'
+              : cellColIndex === 6
+                ? '!text-blue-600'
                 : 'text-ink/90'
+          const importantLabelColor =
+            important?.layer === 'expo'
+              ? 'text-emerald-700'
+              : important?.layer === 'hack'
+                ? 'text-violet-700'
+                : important?.layer === 'stock'
+                  ? 'text-amber-700'
+                  : ''
 
           return (
             <button
               key={cell.iso}
               type="button"
               onClick={() => setSelectedDate(cell.iso)}
-              className={`group flex h-full min-h-[110px] flex-col items-start justify-start text-left text-base transition-colors duration-200 ${
-                cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30'
-              }`}
+              className={cn(
+                'group flex h-full min-h-[110px] flex-col items-start justify-start text-left transition-colors duration-200',
+                cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30',
+              )}
             >
               <span
-                className={`relative flex h-7 w-7 items-center justify-center text-base font-medium leading-tight ${
-                  isToday ? 'rounded-md border border-ink/40' : ''
-                } ${weekend && cell.inMonth ? dateNumberClass : ''}`}
-                style={{ fontSize: '16px' }}
+                className={cn(
+                  'relative flex h-8 w-8 items-center justify-center text-[16px] font-medium',
+                  dateNumberColorClass,
+                  isToday && 'rounded-md border border-ink/40',
+                )}
               >
                 {cell.date.getDate()}
               </span>
@@ -186,8 +198,7 @@ export default function Tap2Calendar() {
               <div className="mt-2 flex w-full flex-col space-y-1 overflow-hidden">
                 {important && (
                   <span
-                    className={`text-[14px] font-medium leading-tight ${layerStyle[important.layer].text} line-clamp-2`}
-                    style={{ fontSize: '14px' }}
+                    className={cn('text-[14px] leading-tight line-clamp-2', importantLabelColor)}
                     title={important.title}
                   >
                     {important.tag}
