@@ -73,174 +73,176 @@ export default function Tap2Calendar() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h3 className="text-xl font-semibold tracking-tight text-ink">CALENDAR</h3>
-        <div className="flex items-center gap-2 text-sm uppercase tracking-[0.2em] text-ink/70">
-          <button
-            type="button"
-            className="px-3 py-1.5 text-sm hover:underline"
-            onClick={() => setViewDate(new Date(today.getFullYear(), today.getMonth(), 1))}
-          >
-            오늘
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1.5 text-sm hover:underline"
-            onClick={() => setViewDate((prev) => addMonths(prev, -1))}
-          >
-            ‹
-          </button>
-          <span>{currentMonthLabel}</span>
-          <button
-            type="button"
-            className="px-3 py-1.5 text-sm hover:underline"
-            onClick={() => setViewDate((prev) => addMonths(prev, 1))}
-          >
-            ›
-          </button>
-        </div>
-      </div>
-
-      <p className="mt-2 text-sm text-ink/60">Press the interest layers</p>
-
-      <div className="mt-3 flex flex-wrap gap-3 text-sm">
-        {(Object.keys(LAYER_LABELS) as Layer[]).map((layer) => {
-          const active = activeLayers.has(layer)
-          return (
+      <div className="mx-auto max-w-[1100px] px-4 sm:px-6 md:px-8 mt-8 mb-12">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h3 className="text-xl font-semibold tracking-tight text-ink">CALENDAR</h3>
+          <div className="flex items-center gap-2 text-sm uppercase tracking-[0.2em] text-ink/70">
             <button
-              key={layer}
               type="button"
-              className={`flex items-center gap-2 border px-3 py-1.5 text-sm uppercase tracking-[0.1em] ${
-                active
-                  ? `${layerStyle[layer].text} ${layerStyle[layer].border} font-semibold`
-                  : 'border-ink/20 text-ink/60'
-              }`}
-              onClick={() => {
-                setActiveLayers((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(layer)) {
-                    next.delete(layer)
-                  } else {
-                    next.add(layer)
-                  }
-                  return next
-                })
-              }}
+              className="px-3 py-1.5 text-sm hover:underline"
+              onClick={() => setViewDate(new Date(today.getFullYear(), today.getMonth(), 1))}
             >
-              <span>{layerEmoji[layer]}</span>
-              <span>{LAYER_LABELS[layer]} ({countsByLayer[layer] ?? 0})</span>
-              {active && <span className="text-base">✓</span>}
+              오늘
             </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-5 grid grid-cols-7 text-base">
-        {weekdays.map((day, colIndex) => (
-          <div
-            key={day}
-            className={cn(
-              'pb-2 text-[18px] leading-none uppercase tracking-[0.1em]',
-              colIndex === 0 ? '!text-red-600' : colIndex === 6 ? '!text-blue-600' : 'text-ink/80',
-            )}
-          >
-            {day}
-          </div>
-        ))}
-      </div>
-      <div className="hairline-dashed" />
-
-      <div className="mt-4 grid grid-cols-7 gap-y-4 text-base" style={{ minHeight: '70vh' }}>
-        {monthCells.map((cell) => {
-          const isToday = isSameDay(cell.date, today)
-          const isSelected = cell.iso === selectedDate
-          const dayEvents = eventsByDate.get(cell.iso) ?? []
-          const important = dayEvents.find((event) => event.tag && importantTags.includes(event.tag))
-          const dots = dayEvents.filter((event) => !event.tag).slice(0, 3)
-          const cellColIndex = cell.date.getDay()
-          const dateNumberColorClass =
-            cellColIndex === 0
-              ? '!text-red-600'
-              : cellColIndex === 6
-                ? '!text-blue-600'
-                : 'text-ink/90'
-          const importantLabelColor =
-            important?.layer === 'expo'
-              ? 'text-emerald-700'
-              : important?.layer === 'hack'
-                ? 'text-violet-700'
-                : important?.layer === 'stock'
-                  ? 'text-amber-700'
-                  : ''
-
-          return (
             <button
-              key={cell.iso}
               type="button"
-              onClick={() => setSelectedDate(cell.iso)}
+              className="px-3 py-1.5 text-sm hover:underline"
+              onClick={() => setViewDate((prev) => addMonths(prev, -1))}
+            >
+              ‹
+            </button>
+            <span>{currentMonthLabel}</span>
+            <button
+              type="button"
+              className="px-3 py-1.5 text-sm hover:underline"
+              onClick={() => setViewDate((prev) => addMonths(prev, 1))}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+
+        <p className="mt-2 text-sm text-ink/60">Press the interest layers</p>
+
+        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+          {(Object.keys(LAYER_LABELS) as Layer[]).map((layer) => {
+            const active = activeLayers.has(layer)
+            return (
+              <button
+                key={layer}
+                type="button"
+                className={`flex items-center gap-2 border px-3 py-1.5 text-sm uppercase tracking-[0.1em] ${
+                  active
+                    ? `${layerStyle[layer].text} ${layerStyle[layer].border} font-semibold`
+                    : 'border-ink/20 text-ink/60'
+                }`}
+                onClick={() => {
+                  setActiveLayers((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(layer)) {
+                      next.delete(layer)
+                    } else {
+                      next.add(layer)
+                    }
+                    return next
+                  })
+                }}
+              >
+                <span>{layerEmoji[layer]}</span>
+                <span>{LAYER_LABELS[layer]} ({countsByLayer[layer] ?? 0})</span>
+                {active && <span className="text-base">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-5 grid grid-cols-7 text-base">
+          {weekdays.map((day, colIndex) => (
+            <div
+              key={day}
               className={cn(
-                'group flex h-full min-h-[110px] flex-col items-start justify-start text-left transition-colors duration-200',
-                cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30',
+                'pb-2 text-[18px] leading-none uppercase tracking-[0.08em]',
+                colIndex === 0 ? '!text-red-600' : colIndex === 6 ? '!text-blue-600' : 'text-ink/80',
               )}
             >
-              <span
+              {day}
+            </div>
+          ))}
+        </div>
+        <div className="hairline-dashed" />
+
+        <div className="mt-4 grid grid-cols-7 gap-y-4 text-base" style={{ minHeight: '70vh' }}>
+          {monthCells.map((cell) => {
+            const isToday = isSameDay(cell.date, today)
+            const isSelected = cell.iso === selectedDate
+            const dayEvents = eventsByDate.get(cell.iso) ?? []
+            const important = dayEvents.find((event) => event.tag && importantTags.includes(event.tag))
+            const dots = dayEvents.filter((event) => !event.tag).slice(0, 3)
+            const cellColIndex = cell.date.getDay()
+            const dateNumberColorClass =
+              cellColIndex === 0
+                ? '!text-red-600'
+                : cellColIndex === 6
+                  ? '!text-blue-600'
+                  : 'text-ink/90'
+            const importantLabelColor =
+              important?.layer === 'expo'
+                ? 'text-emerald-700'
+                : important?.layer === 'hack'
+                  ? 'text-violet-700'
+                  : important?.layer === 'stock'
+                    ? 'text-amber-700'
+                    : ''
+
+            return (
+              <button
+                key={cell.iso}
+                type="button"
+                onClick={() => setSelectedDate(cell.iso)}
                 className={cn(
-                  'relative flex h-8 w-8 items-center justify-center text-[16px] font-medium',
-                  dateNumberColorClass,
-                  isToday && 'rounded-md border border-ink/40',
+                  'group flex h-full min-h-[110px] sm:min-h-[90px] flex-col items-start justify-start text-left transition-colors duration-200',
+                  cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30',
                 )}
               >
-                {cell.date.getDate()}
-              </span>
-              {isSelected && (
-                <span className="mt-1 h-[2px] w-6 bg-ink/40" />
-              )}
-              <div className="mt-2 flex w-full flex-col space-y-1 overflow-hidden">
-                {important && (
-                  <span
-                    className={cn('text-[14px] leading-tight line-clamp-2', importantLabelColor)}
-                    title={important.title}
-                  >
-                    {important.tag}
-                  </span>
-                )}
-                <div className="flex items-center gap-1">
-                  {dots.map((event) => (
-                    <span
-                      key={event.id}
-                      className={`h-1.5 w-1.5 rounded-full ${layerStyle[event.layer].dot}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <section>
-          <p className="text-sm uppercase tracking-[0.2em] text-ink/60">SELECTED DAY</p>
-          <p className="mt-2 text-sm text-ink/70">{selectedDate}</p>
-          <div className="mt-3 max-h-40 space-y-2 overflow-y-auto text-sm text-ink/70">
-            {selectedEvents.length === 0 && <p className="text-ink/50">선택된 일정이 없습니다.</p>}
-            {selectedEvents.map((event) => (
-              <div key={event.id} className="flex items-center gap-3">
-                <span className={`text-sm ${layerStyle[event.layer].text}`}>
-                  {LAYER_LABELS[event.layer]}
+                <span
+                  className={cn(
+                    'relative mt-1 flex h-8 w-8 items-center justify-center text-[16px] font-medium',
+                    dateNumberColorClass,
+                    isToday && 'rounded-md border border-ink/40',
+                  )}
+                >
+                  {cell.date.getDate()}
                 </span>
-                <span className="text-ink/80">{event.title}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+                {isSelected && (
+                  <span className="mt-1 h-[2px] w-6 bg-ink/40" />
+                )}
+                <div className="mt-1.5 flex w-full flex-col space-y-1 overflow-hidden">
+                  {important && (
+                    <span
+                      className={cn('text-[14px] leading-tight line-clamp-2', importantLabelColor)}
+                      title={important.title}
+                    >
+                      {important.tag}
+                    </span>
+                  )}
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {dots.map((event) => (
+                      <span
+                        key={event.id}
+                        className={`h-1.5 w-1.5 rounded-full ${layerStyle[event.layer].dot}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
 
-        <section>
-          <p className="text-sm uppercase tracking-[0.2em] text-ink/60">LIFE CALENDAR</p>
-          <div className="mt-3">
-            <LifeCalendar />
-          </div>
-        </section>
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <section>
+            <p className="text-sm uppercase tracking-[0.2em] text-ink/60">SELECTED DAY</p>
+            <p className="mt-2 text-sm text-ink/70">{selectedDate}</p>
+            <div className="mt-3 max-h-40 space-y-2 overflow-y-auto text-sm text-ink/70">
+              {selectedEvents.length === 0 && <p className="text-ink/50">선택된 일정이 없습니다.</p>}
+              {selectedEvents.map((event) => (
+                <div key={event.id} className="flex items-center gap-3">
+                  <span className={`text-sm ${layerStyle[event.layer].text}`}>
+                    {LAYER_LABELS[event.layer]}
+                  </span>
+                  <span className="text-ink/80">{event.title}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <p className="text-sm uppercase tracking-[0.2em] text-ink/60">LIFE CALENDAR</p>
+            <div className="mt-3">
+              <LifeCalendar />
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   )
