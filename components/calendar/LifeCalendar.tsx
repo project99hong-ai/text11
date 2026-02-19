@@ -1,226 +1,127 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
-type Mode = 'year-1' | 'years-100'
-type CellSize = 6 | 8
+const WEEKS = 52
+const DAYS = 7
+const TOTAL_CELLS = WEEKS * DAYS // 364
+const CELL_SIZE = 10
+const CELL_GAP = 2
+const GRID_SCALE = 0.86
+const DAY_MS = 1000 * 60 * 60 * 24
+const QUARTER_GUIDES = [13, 26, 39]
 
-const WEEKS_IN_YEAR = 52
-const YEARS = 100
-const CELL_GAP_PX = 1
-const MS_IN_WEEK = 1000 * 60 * 60 * 24 * 7
-const GRID_SCALE = 0.2
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ')
+const parseStartDate = (startDate?: string, today?: Date) => {
+  if (startDate) {
+    const parsed = new Date(startDate)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+  }
+  const base = today ?? new Date()
+  return new Date(base.getFullYear(), 0, 1)
+}
 
-export default function LifeCalendar({ birthDate }: { birthDate?: string } = {}) {
-  const [mode, setMode] = useState<Mode>('years-100')
-  const [cellSize, setCellSize] = useState<CellSize>(6)
+export default function LifeCalendar({ startDate }: { startDate?: string } = {}) {
   const today = new Date()
-  const birth = useMemo(() => {
-    const parsed = new Date(birthDate ?? '2004-01-01')
-    return Number.isNaN(parsed.getTime()) ? new Date('2004-01-01') : parsed
-  }, [birthDate])
 
-  const livedWeeks = useMemo(() => {
-    const rawWeeks = Math.floor((today.getTime() - birth.getTime()) / MS_IN_WEEK)
-    return Math.max(0, Math.min(rawWeeks, YEARS * WEEKS_IN_YEAR))
-  }, [today, birth])
-  const nowIndex = Math.max(0, livedWeeks - 1)
+  const start = useMemo(() => parseStartDate(startDate, today), [startDate, today])
 
-  const currentWeekOfYear = useMemo(() => {
-    const startOfYear = new Date(today.getFullYear(), 0, 1)
-    const days = Math.floor((today.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24))
-    return Math.max(0, Math.min(Math.floor(days / 7), WEEKS_IN_YEAR - 1))
-  }, [today])
+  const dayIndex = useMemo(() => {
+    return Math.floor((today.getTime() - start.getTime()) / DAY_MS)
+  }, [today, start])
 
-  const unscaledLifeWidth = WEEKS_IN_YEAR * cellSize + (WEEKS_IN_YEAR - 1) * CELL_GAP_PX
-  const unscaledLifeHeight = YEARS * cellSize + (YEARS - 1) * CELL_GAP_PX
-  const scaledLifeWidth = unscaledLifeWidth * GRID_SCALE
-  const scaledLifeHeight = unscaledLifeHeight * GRID_SCALE
+  const filledCount = clamp(dayIndex + 1, 0, TOTAL_CELLS)
+  const todayCellIndex = clamp(dayIndex, 0, TOTAL_CELLS - 1)
 
-  const unscaledYearWidth = WEEKS_IN_YEAR * cellSize + (WEEKS_IN_YEAR - 1) * CELL_GAP_PX
-  const scaledYearWidth = unscaledYearWidth * GRID_SCALE
-  const scaledYearHeight = Math.max(cellSize * GRID_SCALE, 8)
+  const unscaledWidth = WEEKS * CELL_SIZE + (WEEKS - 1) * CELL_GAP
+  const unscaledHeight = DAYS * CELL_SIZE + (DAYS - 1) * CELL_GAP
+  const scaledWidth = unscaledWidth * GRID_SCALE
+  const scaledHeight = unscaledHeight * GRID_SCALE
 
   return (
-    <div className="mt-3 mb-8 max-w-[520px]">
-      <p className="text-sm uppercase tracking-[0.2em] text-ink/70">LIFE CALENDAR</p>
-      <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-ink/50">Week Life</p>
+    <div className="mt-3 mb-10 max-w-[560px]">
+      <p className="text-sm uppercase tracking-[0.16em] text-ink/70">LIFE CALENDAR</p>
+      <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-ink/60">YEAR (52×7)</p>
 
-      <div className="mt-3 flex items-center gap-5 text-sm uppercase tracking-[0.14em]">
-        <button
-          type="button"
-          className={mode === 'years-100' ? 'font-semibold text-ink underline underline-offset-4' : 'text-ink/45'}
-          onClick={() => setMode('years-100')}
-        >
-          {mode === 'years-100' ? '✓ 100 YEARS' : '100 YEARS'}
-        </button>
-        <button
-          type="button"
-          className={mode === 'year-1' ? 'font-semibold text-ink underline underline-offset-4' : 'text-ink/45'}
-          onClick={() => setMode('year-1')}
-        >
-          {mode === 'year-1' ? '✓ 1 YEAR' : '1 YEAR'}
-        </button>
-      </div>
-
-      <div className="mt-2 flex items-center gap-4 text-sm uppercase tracking-[0.12em]">
-        <span className="text-ink/45">Density</span>
-        <button
-          type="button"
-          className={cellSize === 6 ? 'font-semibold text-ink underline underline-offset-4' : 'text-ink/60'}
-          onClick={() => setCellSize(6)}
-        >
-          {cellSize === 6 ? '✓ 6px' : '6px'}
-        </button>
-        <button
-          type="button"
-          className={cellSize === 8 ? 'font-semibold text-ink underline underline-offset-4' : 'text-ink/60'}
-          onClick={() => setCellSize(8)}
-        >
-          {cellSize === 8 ? '✓ 8px' : '8px'}
-        </button>
-      </div>
-
-      <div className="mt-3 hairline-dashed" />
-
-      {mode === 'years-100' ? (
-        <div className="mt-3">
-          <div className="flex items-start gap-2">
-            <div className="relative text-[9px] leading-none text-ink/55" style={{ width: 20, height: scaledLifeHeight }}>
-              {Array.from({ length: YEARS + 1 }).map((_, age) => {
-                if (age % 10 !== 0) return null
-                const y = Math.min(age, YEARS - 1) * (cellSize + CELL_GAP_PX) * GRID_SCALE
-                return (
-                  <span key={`age-${age}`} className="absolute left-0 -translate-y-1/2">
-                    {age}
-                  </span>
-                )
-              })}
-            </div>
-
-            <div className="relative" style={{ width: scaledLifeWidth, height: scaledLifeHeight }}>
-              <div
-                className="absolute left-0 top-0"
-                style={{
-                  width: unscaledLifeWidth,
-                  height: unscaledLifeHeight,
-                  transform: `scale(${GRID_SCALE})`,
-                  transformOrigin: 'top left',
-                }}
-              >
-                <div
-                  className="grid"
-                  style={{
-                    gridTemplateRows: `repeat(${YEARS}, ${cellSize}px)`,
-                    rowGap: `${CELL_GAP_PX}px`,
-                  }}
-                >
-                  {Array.from({ length: YEARS }).map((_, rowIndex) => (
-                    <div
-                      key={`life-row-${rowIndex}`}
-                      className="relative grid"
-                      style={{
-                        gridTemplateColumns: `repeat(${WEEKS_IN_YEAR}, ${cellSize}px)`,
-                        columnGap: `${CELL_GAP_PX}px`,
-                      }}
-                    >
-                      {rowIndex > 0 && rowIndex % 10 === 0 && (
-                        <span
-                          className="pointer-events-none absolute left-0 right-0 top-0 h-px opacity-30"
-                          style={{
-                            backgroundImage:
-                              'repeating-linear-gradient(90deg, rgba(27,27,27,0.45) 0, rgba(27,27,27,0.45) 4px, rgba(27,27,27,0) 4px, rgba(27,27,27,0) 8px)',
-                          }}
-                        />
-                      )}
-                      {Array.from({ length: WEEKS_IN_YEAR }).map((_, colIndex) => {
-                        const index = rowIndex * WEEKS_IN_YEAR + colIndex
-                        const filled = index < livedWeeks
-                        const isNow = index === nowIndex
-                        return (
-                          <span
-                            key={`life-cell-${index}`}
-                            className={cn(
-                              'relative block border border-ink/20',
-                              filled ? 'bg-ink/35' : 'bg-transparent',
-                            )}
-                            style={{ width: cellSize, height: cellSize }}
-                          >
-                            {isNow && (
-                              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[8px] leading-none text-ink/70">
-                                •
-                              </span>
-                            )}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
+      <div className="mt-3">
+        <div className="relative" style={{ width: scaledWidth, height: scaledHeight }}>
           <div
-            className="mt-2 grid grid-cols-4 text-[10px] uppercase tracking-[0.12em] text-ink/45"
-            style={{ marginLeft: 22, width: scaledLifeWidth }}
+            className="absolute left-0 top-0"
+            style={{
+              transform: `scale(${GRID_SCALE})`,
+              transformOrigin: 'top left',
+            }}
           >
-            <span>Q1</span>
-            <span className="text-center">Q2</span>
-            <span className="text-center">Q3</span>
-            <span className="text-right">Q4</span>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3">
-          <div className="relative" style={{ width: scaledYearWidth, height: scaledYearHeight }}>
             <div
-              className="absolute left-0 top-0 grid"
+              className="relative grid"
               style={{
-                gridTemplateColumns: `repeat(${WEEKS_IN_YEAR}, ${cellSize}px)`,
-                columnGap: `${CELL_GAP_PX}px`,
-                transform: `scale(${GRID_SCALE})`,
-                transformOrigin: 'top left',
+                width: unscaledWidth,
+                height: unscaledHeight,
+                gridTemplateColumns: `repeat(${WEEKS}, ${CELL_SIZE}px)`,
+                gridTemplateRows: `repeat(${DAYS}, ${CELL_SIZE}px)`,
+                columnGap: `${CELL_GAP}px`,
+                rowGap: `${CELL_GAP}px`,
               }}
             >
-              {Array.from({ length: WEEKS_IN_YEAR }).map((_, weekIndex) => {
-                const filled = weekIndex <= currentWeekOfYear
-                const quarterStart = weekIndex === 13 || weekIndex === 26 || weekIndex === 39
-                const isCurrent = weekIndex === currentWeekOfYear
+              {QUARTER_GUIDES.map((week) => {
+                const left = week * CELL_SIZE + (week - 1) * CELL_GAP + CELL_GAP / 2
                 return (
-                  <span key={`year-week-${weekIndex}`} className="relative">
-                    <span
-                      className={cn(
-                        'block border border-ink/20',
-                        filled ? 'bg-ink/35' : 'bg-transparent',
-                      )}
-                      style={{
-                        width: cellSize,
-                        height: cellSize,
-                        borderLeft: quarterStart ? '1px dashed rgba(27,27,27,0.3)' : undefined,
-                      }}
-                    />
-                    {isCurrent && (
-                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[8px] leading-none text-ink/70">
-                        •
-                      </span>
-                    )}
-                  </span>
+                  <span
+                    key={`q-guide-${week}`}
+                    className="pointer-events-none absolute top-0 bottom-0 w-px opacity-35"
+                    style={{
+                      left,
+                      backgroundImage:
+                        'repeating-linear-gradient(180deg, rgba(27,27,27,0.45) 0, rgba(27,27,27,0.45) 4px, rgba(27,27,27,0) 4px, rgba(27,27,27,0) 8px)',
+                    }}
+                  />
                 )
               })}
+              {Array.from({ length: DAYS }).map((_, dayInWeek) =>
+                Array.from({ length: WEEKS }).map((__, weekIndex) => {
+                  const cellIndex = weekIndex * DAYS + dayInWeek
+                  const filled = cellIndex < filledCount
+                  const isToday = cellIndex === todayCellIndex
+
+                  return (
+                    <span
+                      key={`cell-${dayInWeek}-${weekIndex}`}
+                      className={`relative block border ${
+                        isToday ? 'border-ink/60' : filled ? 'border-ink/35' : 'border-ink/12'
+                      }`}
+                      style={{
+                        width: CELL_SIZE,
+                        height: CELL_SIZE,
+                        backgroundImage: filled
+                          ? 'linear-gradient(135deg, transparent 47%, rgba(27,27,27,0.55) 48%, rgba(27,27,27,0.55) 52%, transparent 53%)'
+                          : undefined,
+                      }}
+                    >
+                      {filled && (
+                        <span
+                          className={`absolute right-[1px] top-[1px] block ${isToday ? 'bg-ink/80' : 'bg-ink/60'}`}
+                          style={{ width: 2, height: 2 }}
+                        />
+                      )}
+                    </span>
+                  )
+                }),
+              )}
             </div>
           </div>
-
-          <div className="mt-2 grid grid-cols-4 text-[10px] uppercase tracking-[0.12em] text-ink/45" style={{ width: scaledYearWidth }}>
-            <span>Q1</span>
-            <span className="text-center">Q2</span>
-            <span className="text-center">Q3</span>
-            <span className="text-right">Q4</span>
-          </div>
         </div>
-      )}
+
+        <div
+          className="mt-2 grid text-[10px] uppercase tracking-[0.12em] text-ink/55"
+          style={{ gridTemplateColumns: 'repeat(4, 1fr)', width: scaledWidth }}
+        >
+          <span>Q1</span>
+          <span className="text-center">Q2</span>
+          <span className="text-center">Q3</span>
+          <span className="text-right">Q4</span>
+        </div>
+      </div>
     </div>
   )
 }
