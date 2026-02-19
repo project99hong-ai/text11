@@ -1,19 +1,16 @@
 'use client'
 
-import Image from 'next/image'
-
 const SUPPORT_URL = 'https://buymeacoffee.com/'
 
 export default function DevPlaceholder() {
   return (
     <div className="content-enter mb-10 min-h-[70vh] -translate-y-10 flex flex-col items-center justify-center">
-      <Image
+      <img
         src="/dev-meme-REAL.png"
         alt="개발 진행 중"
         width={420}
         height={280}
         className="h-auto w-full max-w-[420px]"
-        priority
       />
       <p className="mt-4 text-center text-base font-medium text-ink">
         개발자가 열심히 개발중입니다.
@@ -24,7 +21,6 @@ export default function DevPlaceholder() {
       <button
         type="button"
         className="mt-4 text-sm text-ink/80 hover:underline"
-        onClick={() => window.open(SUPPORT_URL, '_blank', 'noopener,noreferrer')}
       >
         ☕ 커피 한잔 사주기
       </button>
