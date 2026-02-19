@@ -70,6 +70,10 @@ const STICKER_WIDTH = 260
 const STICKER_HEIGHT = 150
 const GRID_SNAP = 32
 const REWARD_LIFT = 12
+const COL_WIDTH = 300
+const ROW_HEIGHT = 170
+const CANVAS_PADDING = 72
+const CANVAS_EXTRA = 140
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -107,6 +111,13 @@ const formatTiming = (timing: Timing) => {
 }
 
 const timingOrder: Timing[] = ['morning', 'lunch', 'dinner']
+
+const benefitsClampStyle = {
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical' as const,
+  overflow: 'hidden',
+}
 
 export default function Tap4Supplements() {
   const [items, setItems] = useState<SupplementItem[]>([])
@@ -391,6 +402,9 @@ export default function Tap4Supplements() {
     })
   }
 
+  const cols = containerWidth ? Math.max(1, Math.floor(containerWidth / COL_WIDTH)) : 1
+  const rows = Math.ceil(items.length / cols)
+  const canvasHeight = CANVAS_PADDING + rows * ROW_HEIGHT + CANVAS_EXTRA
   const isMobile = containerWidth > 0 && containerWidth < 640
 
   return (
@@ -409,12 +423,16 @@ export default function Tap4Supplements() {
 
       <div
         ref={canvasRef}
-        className="relative mt-6 min-h-[520px] w-full select-none"
+        className="relative mt-6 w-full select-none"
+        style={{ minHeight: isMobile ? undefined : canvasHeight }}
       >
         {isMobile ? (
           <div className="space-y-6">
             {items.map((item, index) => (
-              <div key={item.id} className={index === 0 ? '' : 'border-t border-dashed border-ink/10 pt-6'}>
+              <div
+                key={item.id}
+                className={index === 0 ? '' : 'border-t border-dashed border-ink/10 pt-6'}
+              >
                 <StickerContent
                   item={item}
                   timingOrder={timingOrder}
@@ -694,38 +712,41 @@ function StickerContent({
 
   return (
     <div className="flex flex-col gap-3 px-2 py-2">
-      <div className="flex items-start justify-between gap-6">
-        <div className="flex items-start gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
           <div className="text-graphite">
-            <Image src={iconSrc} alt="" width={36} height={36} />
+            <Image src={iconSrc} alt="" width={34} height={34} />
           </div>
           <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-lg font-semibold tracking-tight text-ink">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="max-w-[170px] truncate text-[15px] font-semibold tracking-tight text-ink">
                 {item.name}
               </span>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {timingOrder
                   .filter((timing) => item.timing.includes(timing))
                   .map((timing) => (
                     <span
                       key={timing}
-                      className="rounded-full border border-ink/30 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-ink/70"
+                      className="rounded-full border border-ink/25 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-ink/70"
                     >
                       {formatTiming(timing)}
                     </span>
                   ))}
               </div>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-ink/60">
+            <p
+              className="mt-1.5 text-sm leading-relaxed text-ink/60"
+              style={benefitsClampStyle}
+            >
               {item.benefits}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            className="text-sm text-ink/60 hover:text-ink"
+            className="text-[13px] text-ink/60 hover:text-ink"
             onClick={onEditToggle}
             data-no-drag="true"
             onPointerDown={(event) => event.stopPropagation()}
@@ -734,7 +755,7 @@ function StickerContent({
           </button>
           <button
             type="button"
-            className={`text-sm ${item.pinned ? 'text-accent' : 'text-ink/60'} hover:text-ink`}
+            className={`text-[13px] ${item.pinned ? 'text-accent' : 'text-ink/60'} hover:text-ink`}
             onClick={onTogglePin}
             data-no-drag="true"
             onPointerDown={(event) => event.stopPropagation()}
@@ -746,7 +767,7 @@ function StickerContent({
 
       <div className="hairline-dashed" />
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink/70 tabular-nums">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink/70 tabular-nums">
         <span>남은 알 {item.pillsRemaining}</span>
         {daysLeft === null ? (
           <span className="text-ink/60">섭취량 설정 필요</span>
@@ -755,20 +776,20 @@ function StickerContent({
             남은 기간 {daysLeft}일
           </span>
         )}
-        <div className="flex flex-wrap items-center gap-3 text-sm text-ink/70">
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-ink/70">
           {timingOrder
             .filter((timing) => item.timing.includes(timing))
             .map((timing) => (
-              <label key={timing} className="flex items-center gap-2">
+              <label key={timing} className="flex items-center gap-1.5">
                 <input
                   type="checkbox"
                   checked={todayTaken.includes(timing)}
                   onChange={() => onToggleTaken(item.id, timing)}
-                  className="h-4 w-4 accent-ink"
+                  className="h-3.5 w-3.5 accent-ink"
                   data-no-drag="true"
                   onPointerDown={(event) => event.stopPropagation()}
                 />
-                {formatTiming(timing)} 섭취
+                {formatTiming(timing)}
               </label>
             ))}
         </div>
