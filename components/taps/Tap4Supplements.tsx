@@ -5,7 +5,12 @@ import Image from 'next/image'
 import type { SupplementPreset, Timing } from '../../lib/supplementsDb'
 import { SUPPLEMENT_PRESETS, findPresetByName } from '../../lib/supplementsDb'
 import { loadJSON, saveJSON } from '../../lib/storage'
-import { clamp, createInitialLayout } from '../../lib/layout'
+import {
+  clamp,
+  createInitialLayout,
+  resolveCollisions,
+  snapToGrid,
+} from '../../lib/layout'
 
 import iconMilkThistle from '../../icons/milk-thistle.svg'
 import iconOmega3 from '../../icons/omega3.svg'
@@ -59,10 +64,12 @@ type AddDraft = {
   presetKey: string | null
 }
 
-const STORAGE_KEY = 'friday_supplements'
+const STORAGE_KEY = 'friday:supplements:v2'
 const CUSTOM_PRESET_KEY = 'friday_custom_presets'
 const STICKER_WIDTH = 260
 const STICKER_HEIGHT = 150
+const GRID_SNAP = 32
+const REWARD_LIFT = 12
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -107,6 +114,7 @@ export default function Tap4Supplements() {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [containerWidth, setContainerWidth] = useState(0)
+  const [containerHeight, setContainerHeight] = useState(0)
   const [undoState, setUndoState] = useState<{
     itemId: string
     timing: Timing
@@ -126,10 +134,13 @@ export default function Tap4Supplements() {
 
   useEffect(() => {
     const saved = loadJSON<SupplementItem[]>(STORAGE_KEY, [])
+    const legacy = loadJSON<SupplementItem[]>('friday_supplements', [])
     const savedPresets = loadJSON<CustomPreset[]>(CUSTOM_PRESET_KEY, [])
     setCustomPresets(savedPresets)
     if (saved.length) {
       setItems(saved.map(normalizeItem))
+    } else if (legacy.length) {
+      setItems(legacy.map(normalizeItem))
     } else {
       setItems(defaultItems())
     }
@@ -150,24 +161,31 @@ export default function Tap4Supplements() {
       const entry = entries[0]
       if (!entry) return
       setContainerWidth(entry.contentRect.width)
+      setContainerHeight(entry.contentRect.height)
     })
     observer.observe(canvasRef.current)
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    if (!containerWidth || !items.length) return
+    if (!containerWidth || !containerHeight || !items.length) return
     setItems((prev) => {
       if (prev.every((item) => item.x || item.y)) return prev
       const layout = createInitialLayout(prev.length, containerWidth)
-      return prev.map((item, index) => ({
+      const seeded = prev.map((item, index) => ({
         ...item,
         x: item.x || layout[index].x,
         y: item.y || layout[index].y,
         rotate: item.rotate || layout[index].rotate,
       }))
+      return resolveCollisions(seeded, {
+        width: STICKER_WIDTH,
+        height: STICKER_HEIGHT,
+        containerWidth,
+        containerHeight,
+      })
     })
-  }, [containerWidth, items.length])
+  }, [containerWidth, containerHeight, items.length])
 
   useEffect(() => {
     if (!undoState) return
@@ -201,14 +219,42 @@ export default function Tap4Supplements() {
         ),
       )
     }
-    const handleUp = () => setDraggingId(null)
+    const handleUp = () => {
+      setItems((prev) => {
+        const snapped = prev.map((item) =>
+          item.id === draggingId
+            ? {
+                ...item,
+                x: clamp(
+                  snapToGrid(item.x, GRID_SNAP),
+                  0,
+                  Math.max(0, containerWidth - STICKER_WIDTH),
+                ),
+                y: clamp(
+                  snapToGrid(item.y, GRID_SNAP),
+                  0,
+                  Math.max(0, containerHeight - STICKER_HEIGHT),
+                ),
+              }
+            : item,
+        )
+        if (!containerWidth || !containerHeight) return snapped
+        return resolveCollisions(snapped, {
+          width: STICKER_WIDTH,
+          height: STICKER_HEIGHT,
+          containerWidth,
+          containerHeight,
+        })
+      })
+      setDraggingId(null)
+    }
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp)
     return () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [draggingId, dragOffset])
+  }, [draggingId, dragOffset, containerWidth, containerHeight])
 
   const allPresets = useMemo(
     () => [...SUPPLEMENT_PRESETS, ...customPresets],
@@ -258,14 +304,20 @@ export default function Tap4Supplements() {
 
     setItems((prev) => {
       const next = [...prev, createBaseItem(preset)]
-      if (!containerWidth) return next
+      if (!containerWidth || !containerHeight) return next
       const layout = createInitialLayout(next.length, containerWidth)
-      return next.map((item, index) => ({
+      const seeded = next.map((item, index) => ({
         ...item,
         x: item.x || layout[index].x,
         y: item.y || layout[index].y,
         rotate: item.rotate || layout[index].rotate,
       }))
+      return resolveCollisions(seeded, {
+        width: STICKER_WIDTH,
+        height: STICKER_HEIGHT,
+        containerWidth,
+        containerHeight,
+      })
     })
     setDraft({ step: 1, name: '', benefits: '', timing: [], dosagePerDay: 1, presetKey: null })
   }
@@ -285,6 +337,7 @@ export default function Tap4Supplements() {
             ? Math.max(1, Math.round(item.dosagePerDay / Math.max(1, item.timing.length)))
             : 0
         const delta = hasTiming ? perTimingDose : -perTimingDose
+        const rewardShift = hasTiming ? REWARD_LIFT : -REWARD_LIFT
         return {
           ...item,
           pillsRemaining: Math.max(0, item.pillsRemaining + delta),
@@ -292,6 +345,7 @@ export default function Tap4Supplements() {
             ...item.takenByDate,
             [today]: nextList,
           },
+          y: clamp(item.y + rewardShift, 0, Math.max(0, containerHeight - STICKER_HEIGHT)),
         }
       })
       const previous = prev.map((item) => ({ ...item }))
@@ -312,6 +366,29 @@ export default function Tap4Supplements() {
   const handleEditSave = (id: string, next: SupplementItem) => {
     updateItem(id, next)
     setExpandedId(null)
+  }
+
+  const handlePinToggle = (id: string) => {
+    setItems((prev) => {
+      const next = prev.map((item) => {
+        if (item.id !== id) return item
+        if (!item.pinned) {
+          return {
+            ...item,
+            pinned: true,
+            rotate: clamp(item.rotate, -0.35, 0.35),
+          }
+        }
+        return { ...item, pinned: false }
+      })
+      if (!containerWidth || !containerHeight) return next
+      return resolveCollisions(next, {
+        width: STICKER_WIDTH,
+        height: STICKER_HEIGHT,
+        containerWidth,
+        containerHeight,
+      })
+    })
   }
 
   const isMobile = containerWidth > 0 && containerWidth < 640
@@ -346,9 +423,7 @@ export default function Tap4Supplements() {
                   expandedId={expandedId}
                   onSaveEdit={(next) => handleEditSave(item.id, next)}
                   onCancelEdit={() => setExpandedId(null)}
-                  onTogglePin={() =>
-                    updateItem(item.id, { pinned: !item.pinned })
-                  }
+                  onTogglePin={() => handlePinToggle(item.id)}
                 />
               </div>
             ))}
@@ -358,7 +433,7 @@ export default function Tap4Supplements() {
             {items.map((item) => {
               const isDragging = draggingId === item.id
               const scale = item.pinned ? 1.2 : 1
-              const zIndex = item.pinned ? 30 : 10
+              const zIndex = item.pinned ? 50 : 10
               return (
                 <div
                   key={item.id}
@@ -381,11 +456,7 @@ export default function Tap4Supplements() {
                   }}
                 >
                   <div
-                    className={
-                      isDragging
-                        ? 'transition-transform duration-150 ease-out'
-                        : 'transition-transform duration-150 ease-out'
-                    }
+                    className="transition-transform duration-150 ease-out"
                     style={{
                       boxShadow: isDragging
                         ? '0 10px 18px rgba(0,0,0,0.08)'
@@ -400,9 +471,7 @@ export default function Tap4Supplements() {
                       expandedId={expandedId}
                       onSaveEdit={(next) => handleEditSave(item.id, next)}
                       onCancelEdit={() => setExpandedId(null)}
-                      onTogglePin={() =>
-                        updateItem(item.id, { pinned: !item.pinned })
-                      }
+                      onTogglePin={() => handlePinToggle(item.id)}
                     />
                   </div>
                 </div>
@@ -624,7 +693,7 @@ function StickerContent({
   const iconSrc = ICON_MAP[item.icon] ?? ICON_MAP.multivitamin
 
   return (
-    <div className="flex flex-col gap-4 px-2 py-2">
+    <div className="flex flex-col gap-3 px-2 py-2">
       <div className="flex items-start justify-between gap-6">
         <div className="flex items-start gap-4">
           <div className="text-graphite">
@@ -656,22 +725,26 @@ function StickerContent({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="text-xs uppercase tracking-[0.2em] text-ink/60 hover:text-ink"
+            className="text-sm text-ink/60 hover:text-ink"
             onClick={onEditToggle}
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           >
-            편집
+            ✏️
           </button>
           <button
             type="button"
-            className="text-xs uppercase tracking-[0.2em] text-ink/60 hover:text-ink"
+            className={`text-sm ${item.pinned ? 'text-accent' : 'text-ink/60'} hover:text-ink`}
             onClick={onTogglePin}
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           >
-            {item.pinned ? 'Unpin' : 'Pin'}
+            {item.pinned ? '★' : '☆'}
           </button>
         </div>
       </div>
+
+      <div className="hairline-dashed" />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink/70 tabular-nums">
         <span>남은 알 {item.pillsRemaining}</span>
@@ -693,6 +766,7 @@ function StickerContent({
                   onChange={() => onToggleTaken(item.id, timing)}
                   className="h-4 w-4 accent-ink"
                   data-no-drag="true"
+                  onPointerDown={(event) => event.stopPropagation()}
                 />
                 {formatTiming(timing)} 섭취
               </label>
@@ -741,6 +815,7 @@ function EditForm({
             onChange={(event) => setForm({ ...form, purchaseDate: event.target.value })}
             className="border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           />
         </label>
         <label className="flex items-center gap-2">
@@ -752,6 +827,7 @@ function EditForm({
             onChange={(event) => setForm({ ...form, totalPills: Number(event.target.value) })}
             className="w-20 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           />
         </label>
         <label className="flex items-center gap-2">
@@ -763,6 +839,7 @@ function EditForm({
             onChange={(event) => setForm({ ...form, dosagePerDay: Number(event.target.value) })}
             className="w-16 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           />
         </label>
         <label className="flex items-center gap-2">
@@ -776,6 +853,7 @@ function EditForm({
             }
             className="w-20 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
             data-no-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
           />
         </label>
       </div>
@@ -785,6 +863,7 @@ function EditForm({
           className="text-xs uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
           onClick={() => onSave(form)}
           data-no-drag="true"
+          onPointerDown={(event) => event.stopPropagation()}
         >
           저장
         </button>
@@ -793,6 +872,7 @@ function EditForm({
           className="text-xs uppercase tracking-[0.2em] text-ink/40 hover:text-ink/70"
           onClick={onCancel}
           data-no-drag="true"
+          onPointerDown={(event) => event.stopPropagation()}
         >
           취소
         </button>
