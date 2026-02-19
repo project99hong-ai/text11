@@ -1,13 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import type { SupplementPreset, Timing } from '../../lib/supplementsDb'
-import {
-  SUPPLEMENT_PRESETS,
-  findPresetByName,
-} from '../../lib/supplementsDb'
+import { SUPPLEMENT_PRESETS, findPresetByName } from '../../lib/supplementsDb'
 import { loadJSON, saveJSON } from '../../lib/storage'
+import { clamp, createInitialLayout } from '../../lib/layout'
 
 import iconMilkThistle from '../../icons/milk-thistle.svg'
 import iconOmega3 from '../../icons/omega3.svg'
@@ -43,7 +41,11 @@ type SupplementItem = {
   totalPills: number
   pillsRemaining: number
   dosagePerDay: number
-  takenDates: string[]
+  takenByDate: Record<string, Timing[]>
+  x: number
+  y: number
+  rotate: number
+  pinned: boolean
 }
 
 type CustomPreset = SupplementPreset
@@ -59,6 +61,8 @@ type AddDraft = {
 
 const STORAGE_KEY = 'friday_supplements'
 const CUSTOM_PRESET_KEY = 'friday_custom_presets'
+const STICKER_WIDTH = 260
+const STICKER_HEIGHT = 150
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -75,7 +79,11 @@ const createBaseItem = (preset: SupplementPreset): SupplementItem => {
     totalPills,
     pillsRemaining: totalPills,
     dosagePerDay: preset.defaultDosagePerDay,
-    takenDates: [],
+    takenByDate: {},
+    x: 0,
+    y: 0,
+    rotate: 0,
+    pinned: false,
   }
 }
 
@@ -96,6 +104,15 @@ const timingOrder: Timing[] = ['morning', 'lunch', 'dinner']
 export default function Tap4Supplements() {
   const [items, setItems] = useState<SupplementItem[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [undoState, setUndoState] = useState<{
+    itemId: string
+    timing: Timing
+    previous: SupplementItem[]
+    expiresAt: number
+  } | null>(null)
   const [draft, setDraft] = useState<AddDraft>({
     step: 1,
     name: '',
@@ -105,12 +122,17 @@ export default function Tap4Supplements() {
     presetKey: null,
   })
   const [customPresets, setCustomPresets] = useState<CustomPreset[]>([])
+  const canvasRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const saved = loadJSON<SupplementItem[]>(STORAGE_KEY, [])
     const savedPresets = loadJSON<CustomPreset[]>(CUSTOM_PRESET_KEY, [])
     setCustomPresets(savedPresets)
-    setItems(saved.length ? saved : defaultItems())
+    if (saved.length) {
+      setItems(saved.map(normalizeItem))
+    } else {
+      setItems(defaultItems())
+    }
   }, [])
 
   useEffect(() => {
@@ -121,6 +143,72 @@ export default function Tap4Supplements() {
   useEffect(() => {
     saveJSON(CUSTOM_PRESET_KEY, customPresets)
   }, [customPresets])
+
+  useEffect(() => {
+    if (!canvasRef.current) return
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      setContainerWidth(entry.contentRect.width)
+    })
+    observer.observe(canvasRef.current)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!containerWidth || !items.length) return
+    setItems((prev) => {
+      if (prev.every((item) => item.x || item.y)) return prev
+      const layout = createInitialLayout(prev.length, containerWidth)
+      return prev.map((item, index) => ({
+        ...item,
+        x: item.x || layout[index].x,
+        y: item.y || layout[index].y,
+        rotate: item.rotate || layout[index].rotate,
+      }))
+    })
+  }, [containerWidth, items.length])
+
+  useEffect(() => {
+    if (!undoState) return
+    const remaining = undoState.expiresAt - Date.now()
+    if (remaining <= 0) {
+      setUndoState(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setUndoState(null)
+    }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [undoState])
+
+  useEffect(() => {
+    if (!draggingId) return
+    const handleMove = (event: PointerEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const nextX = event.clientX - rect.left - dragOffset.x
+      const nextY = event.clientY - rect.top - dragOffset.y
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === draggingId
+            ? {
+                ...item,
+                x: clamp(nextX, 0, Math.max(0, rect.width - STICKER_WIDTH)),
+                y: clamp(nextY, 0, Math.max(0, rect.height - STICKER_HEIGHT)),
+              }
+            : item,
+        ),
+      )
+    }
+    const handleUp = () => setDraggingId(null)
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+  }, [draggingId, dragOffset])
 
   const allPresets = useMemo(
     () => [...SUPPLEMENT_PRESETS, ...customPresets],
@@ -168,24 +256,53 @@ export default function Tap4Supplements() {
       })
     }
 
-    setItems((prev) => [...prev, createBaseItem(preset)])
+    setItems((prev) => {
+      const next = [...prev, createBaseItem(preset)]
+      if (!containerWidth) return next
+      const layout = createInitialLayout(next.length, containerWidth)
+      return next.map((item, index) => ({
+        ...item,
+        x: item.x || layout[index].x,
+        y: item.y || layout[index].y,
+        rotate: item.rotate || layout[index].rotate,
+      }))
+    })
     setDraft({ step: 1, name: '', benefits: '', timing: [], dosagePerDay: 1, presetKey: null })
   }
 
-  const toggleTaken = (id: string) => {
+  const toggleTaken = (id: string, timing: Timing) => {
     const today = todayIso()
-    setItems((prev) =>
-      prev.map((item) => {
+    setItems((prev) => {
+      const next = prev.map((item) => {
         if (item.id !== id) return item
-        const hasToday = item.takenDates.includes(today)
+        const todayList = item.takenByDate[today] ?? []
+        const hasTiming = todayList.includes(timing)
+        const nextList = hasTiming
+          ? todayList.filter((t) => t !== timing)
+          : [...todayList, timing]
+        const perTimingDose =
+          item.dosagePerDay > 0
+            ? Math.max(1, Math.round(item.dosagePerDay / Math.max(1, item.timing.length)))
+            : 0
+        const delta = hasTiming ? perTimingDose : -perTimingDose
         return {
           ...item,
-          takenDates: hasToday
-            ? item.takenDates.filter((date) => date !== today)
-            : [...item.takenDates, today],
+          pillsRemaining: Math.max(0, item.pillsRemaining + delta),
+          takenByDate: {
+            ...item.takenByDate,
+            [today]: nextList,
+          },
         }
-      }),
-    )
+      })
+      const previous = prev.map((item) => ({ ...item }))
+      setUndoState({
+        itemId: id,
+        timing,
+        previous,
+        expiresAt: Date.now() + 3000,
+      })
+      return next
+    })
   }
 
   const updateItem = (id: string, patch: Partial<SupplementItem>) => {
@@ -197,107 +314,102 @@ export default function Tap4Supplements() {
     setExpandedId(null)
   }
 
+  const isMobile = containerWidth > 0 && containerWidth < 640
+
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h3 className="text-lg uppercase tracking-[0.18em] text-ink">Supplements</h3>
+        <h3 className="text-lg uppercase tracking-[0.18em] text-ink">SUPPLEMENTS</h3>
         <button
           type="button"
           className="text-sm uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
           onClick={() => setDraft((prev) => ({ ...prev, step: 1 }))}
+          data-no-drag="true"
         >
-          + Add supplement
+          + ADD SUPPLEMENT
         </button>
       </div>
-      <div className="hairline mt-3" />
 
-      <div className="mt-6 space-y-6">
-        {items.map((item, index) => {
-          const daysLeft =
-            item.dosagePerDay > 0
-              ? Math.floor(item.pillsRemaining / item.dosagePerDay)
-              : null
-          const today = todayIso()
-          const todayTaken = item.takenDates.includes(today)
-          const iconSrc = ICON_MAP[item.icon] ?? ICON_MAP.multivitamin
-
-          return (
-            <div key={item.id} className={index === 0 ? '' : 'border-t border-ink/10 pt-6'}>
-              <div className="flex items-start justify-between gap-6">
-                <div className="flex items-start gap-4">
-                  <div className="text-graphite">
-                    <Image src={iconSrc} alt="" width={36} height={36} />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-lg font-semibold tracking-tight text-ink">
-                        {item.name}
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {timingOrder
-                          .filter((timing) => item.timing.includes(timing))
-                          .map((timing) => (
-                            <span
-                              key={timing}
-                              className="rounded-full border border-ink/30 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-ink/70"
-                            >
-                              {formatTiming(timing)}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-ink/60">
-                      {item.benefits}
-                    </p>
+      <div
+        ref={canvasRef}
+        className="relative mt-6 min-h-[520px] w-full select-none"
+      >
+        {isMobile ? (
+          <div className="space-y-6">
+            {items.map((item, index) => (
+              <div key={item.id} className={index === 0 ? '' : 'border-t border-dashed border-ink/10 pt-6'}>
+                <StickerContent
+                  item={item}
+                  timingOrder={timingOrder}
+                  onToggleTaken={toggleTaken}
+                  onEditToggle={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
+                  expandedId={expandedId}
+                  onSaveEdit={(next) => handleEditSave(item.id, next)}
+                  onCancelEdit={() => setExpandedId(null)}
+                  onTogglePin={() =>
+                    updateItem(item.id, { pinned: !item.pinned })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="absolute inset-0">
+            {items.map((item) => {
+              const isDragging = draggingId === item.id
+              const scale = item.pinned ? 1.2 : 1
+              const zIndex = item.pinned ? 30 : 10
+              return (
+                <div
+                  key={item.id}
+                  className="absolute"
+                  style={{
+                    transform: `translate(${item.x}px, ${item.y}px) rotate(${item.rotate}deg) scale(${scale})`,
+                    zIndex,
+                    width: STICKER_WIDTH,
+                  }}
+                  onPointerDown={(event) => {
+                    const target = event.target as HTMLElement
+                    if (target.closest('[data-no-drag="true"]')) return
+                    const rect = canvasRef.current?.getBoundingClientRect()
+                    if (!rect) return
+                    setDraggingId(item.id)
+                    setDragOffset({
+                      x: event.clientX - rect.left - item.x,
+                      y: event.clientY - rect.top - item.y,
+                    })
+                  }}
+                >
+                  <div
+                    className={
+                      isDragging
+                        ? 'transition-transform duration-150 ease-out'
+                        : 'transition-transform duration-150 ease-out'
+                    }
+                    style={{
+                      boxShadow: isDragging
+                        ? '0 10px 18px rgba(0,0,0,0.08)'
+                        : '0 6px 12px rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    <StickerContent
+                      item={item}
+                      timingOrder={timingOrder}
+                      onToggleTaken={toggleTaken}
+                      onEditToggle={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
+                      expandedId={expandedId}
+                      onSaveEdit={(next) => handleEditSave(item.id, next)}
+                      onCancelEdit={() => setExpandedId(null)}
+                      onTogglePin={() =>
+                        updateItem(item.id, { pinned: !item.pinned })
+                      }
+                    />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="text-xs uppercase tracking-[0.2em] text-ink/60 hover:text-ink"
-                  onClick={() =>
-                    setExpandedId((prev) => (prev === item.id ? null : item.id))
-                  }
-                >
-                  편집
-                </button>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink/70 tabular-nums">
-                <span>남은 알 {item.pillsRemaining}</span>
-                {daysLeft === null ? (
-                  <span className="text-ink/60">섭취량 설정 필요</span>
-                ) : (
-                  <span>남은 기간 {daysLeft}일</span>
-                )}
-                <label className="flex items-center gap-2 text-sm text-ink/70">
-                  <input
-                    type="checkbox"
-                    checked={todayTaken}
-                    onChange={() => toggleTaken(item.id)}
-                    className="h-4 w-4 accent-ink"
-                  />
-                  오늘 섭취
-                </label>
-              </div>
-
-              <div
-                className={`transition-[max-height,opacity,transform] duration-200 ease-out ${
-                  expandedId === item.id
-                    ? 'mt-4 max-h-[320px] opacity-100'
-                    : 'mt-0 max-h-0 opacity-0'
-                } overflow-hidden`}
-              >
-                {expandedId === item.id && (
-                  <EditForm
-                    item={item}
-                    onCancel={() => setExpandedId(null)}
-                    onSave={(next) => handleEditSave(item.id, next)}
-                  />
-                )}
-              </div>
-            </div>
-          )
-        })}
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="hairline-dashed mt-8" />
@@ -315,6 +427,7 @@ export default function Tap4Supplements() {
                   setDraft((prev) => ({ ...prev, name: event.target.value }))
                 }
                 className="w-72 border-b border-ink/20 bg-transparent px-0 py-2 text-sm text-ink focus:border-ink/60 focus:outline-none"
+                data-no-drag="true"
               />
               <button
                 type="button"
@@ -326,17 +439,19 @@ export default function Tap4Supplements() {
                     setDraft((prev) => ({ ...prev, step: 2 }))
                   }
                 }}
+                data-no-drag="true"
               >
                 다음
               </button>
             </div>
             {suggestedPreset && (
               <div className="mt-3 text-sm text-ink/70">
-                추천: 
+                추천:
                 <button
                   type="button"
                   className="ml-2 text-sm underline underline-offset-4"
                   onClick={() => setDraftWithPreset(suggestedPreset)}
+                  data-no-drag="true"
                 >
                   {suggestedPreset.displayName}
                 </button>
@@ -367,6 +482,7 @@ export default function Tap4Supplements() {
                         })
                       }
                       className="h-4 w-4 accent-ink"
+                      data-no-drag="true"
                     />
                     {formatTiming(timing)}
                   </label>
@@ -385,6 +501,7 @@ export default function Tap4Supplements() {
                     }))
                   }
                   className="w-16 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
+                  data-no-drag="true"
                 />
               </div>
             </div>
@@ -398,6 +515,7 @@ export default function Tap4Supplements() {
                     setDraft((prev) => ({ ...prev, benefits: event.target.value }))
                   }
                   className="w-full max-w-md border-b border-ink/20 bg-transparent px-0 py-2 text-sm text-ink focus:border-ink/60 focus:outline-none"
+                  data-no-drag="true"
                 />
               </div>
             )}
@@ -406,6 +524,7 @@ export default function Tap4Supplements() {
                 type="button"
                 className="text-xs uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
                 onClick={() => setDraft((prev) => ({ ...prev, step: 3 }))}
+                data-no-drag="true"
               >
                 다음
               </button>
@@ -415,6 +534,7 @@ export default function Tap4Supplements() {
                 onClick={() =>
                   setDraft({ step: 1, name: '', benefits: '', timing: [], dosagePerDay: 1, presetKey: null })
                 }
+                data-no-drag="true"
               >
                 취소
               </button>
@@ -433,6 +553,7 @@ export default function Tap4Supplements() {
                 type="button"
                 className="text-xs uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
                 onClick={handleCreate}
+                data-no-drag="true"
               >
                 저장
               </button>
@@ -442,6 +563,7 @@ export default function Tap4Supplements() {
                 onClick={() =>
                   setDraft({ step: 1, name: '', benefits: '', timing: [], dosagePerDay: 1, presetKey: null })
                 }
+                data-no-drag="true"
               >
                 취소
               </button>
@@ -450,9 +572,145 @@ export default function Tap4Supplements() {
         )}
       </div>
 
+      {undoState && (
+        <div className="mt-6 flex items-center gap-4 text-xs text-ink/60">
+          <span>방금 체크를 적용했습니다.</span>
+          <button
+            type="button"
+            className="text-xs uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
+            onClick={() => {
+              setItems(undoState.previous)
+              setUndoState(null)
+            }}
+            data-no-drag="true"
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
       <p className="mt-8 text-xs text-ink/40">
         안내 정보는 참고용이며, 개인 건강 상태에 따라 전문가와 상담하세요.
       </p>
+    </div>
+  )
+}
+
+function StickerContent({
+  item,
+  timingOrder,
+  onToggleTaken,
+  onEditToggle,
+  expandedId,
+  onSaveEdit,
+  onCancelEdit,
+  onTogglePin,
+}: {
+  item: SupplementItem
+  timingOrder: Timing[]
+  onToggleTaken: (id: string, timing: Timing) => void
+  onEditToggle: () => void
+  expandedId: string | null
+  onSaveEdit: (next: SupplementItem) => void
+  onCancelEdit: () => void
+  onTogglePin: () => void
+}) {
+  const today = todayIso()
+  const todayTaken = item.takenByDate[today] ?? []
+  const daysLeft =
+    item.dosagePerDay > 0
+      ? Math.floor(item.pillsRemaining / item.dosagePerDay)
+      : null
+  const iconSrc = ICON_MAP[item.icon] ?? ICON_MAP.multivitamin
+
+  return (
+    <div className="flex flex-col gap-4 px-2 py-2">
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-4">
+          <div className="text-graphite">
+            <Image src={iconSrc} alt="" width={36} height={36} />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-lg font-semibold tracking-tight text-ink">
+                {item.name}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {timingOrder
+                  .filter((timing) => item.timing.includes(timing))
+                  .map((timing) => (
+                    <span
+                      key={timing}
+                      className="rounded-full border border-ink/30 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-ink/70"
+                    >
+                      {formatTiming(timing)}
+                    </span>
+                  ))}
+              </div>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-ink/60">
+              {item.benefits}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="text-xs uppercase tracking-[0.2em] text-ink/60 hover:text-ink"
+            onClick={onEditToggle}
+            data-no-drag="true"
+          >
+            편집
+          </button>
+          <button
+            type="button"
+            className="text-xs uppercase tracking-[0.2em] text-ink/60 hover:text-ink"
+            onClick={onTogglePin}
+            data-no-drag="true"
+          >
+            {item.pinned ? 'Unpin' : 'Pin'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink/70 tabular-nums">
+        <span>남은 알 {item.pillsRemaining}</span>
+        {daysLeft === null ? (
+          <span className="text-ink/60">섭취량 설정 필요</span>
+        ) : (
+          <span className={daysLeft <= 5 ? 'text-accent' : undefined}>
+            남은 기간 {daysLeft}일
+          </span>
+        )}
+        <div className="flex flex-wrap items-center gap-3 text-sm text-ink/70">
+          {timingOrder
+            .filter((timing) => item.timing.includes(timing))
+            .map((timing) => (
+              <label key={timing} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={todayTaken.includes(timing)}
+                  onChange={() => onToggleTaken(item.id, timing)}
+                  className="h-4 w-4 accent-ink"
+                  data-no-drag="true"
+                />
+                {formatTiming(timing)} 섭취
+              </label>
+            ))}
+        </div>
+      </div>
+
+      <div
+        className={`transition-[max-height,opacity,transform] duration-200 ease-out ${
+          expandedId === item.id
+            ? 'max-h-[320px] opacity-100'
+            : 'max-h-0 opacity-0'
+        } overflow-hidden`}
+      >
+        {expandedId === item.id && (
+          <EditForm item={item} onCancel={onCancelEdit} onSave={onSaveEdit} />
+        )}
+      </div>
     </div>
   )
 }
@@ -473,7 +731,7 @@ function EditForm({
   }, [item])
 
   return (
-    <div className="mt-4 space-y-3 text-sm text-ink/70">
+    <div className="mt-2 space-y-3 text-sm text-ink/70">
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2">
           구매일
@@ -482,6 +740,7 @@ function EditForm({
             value={form.purchaseDate}
             onChange={(event) => setForm({ ...form, purchaseDate: event.target.value })}
             className="border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
+            data-no-drag="true"
           />
         </label>
         <label className="flex items-center gap-2">
@@ -492,6 +751,7 @@ function EditForm({
             value={form.totalPills}
             onChange={(event) => setForm({ ...form, totalPills: Number(event.target.value) })}
             className="w-20 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
+            data-no-drag="true"
           />
         </label>
         <label className="flex items-center gap-2">
@@ -502,6 +762,7 @@ function EditForm({
             value={form.dosagePerDay}
             onChange={(event) => setForm({ ...form, dosagePerDay: Number(event.target.value) })}
             className="w-16 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
+            data-no-drag="true"
           />
         </label>
         <label className="flex items-center gap-2">
@@ -514,6 +775,7 @@ function EditForm({
               setForm({ ...form, pillsRemaining: Number(event.target.value) })
             }
             className="w-20 border-b border-ink/20 bg-transparent px-1 py-1 text-sm text-ink focus:border-ink/60 focus:outline-none"
+            data-no-drag="true"
           />
         </label>
       </div>
@@ -522,6 +784,7 @@ function EditForm({
           type="button"
           className="text-xs uppercase tracking-[0.2em] text-ink/70 hover:text-ink"
           onClick={() => onSave(form)}
+          data-no-drag="true"
         >
           저장
         </button>
@@ -529,10 +792,32 @@ function EditForm({
           type="button"
           className="text-xs uppercase tracking-[0.2em] text-ink/40 hover:text-ink/70"
           onClick={onCancel}
+          data-no-drag="true"
         >
           취소
         </button>
       </div>
     </div>
   )
+}
+
+function normalizeItem(item: SupplementItem): SupplementItem {
+  const anyItem = item as SupplementItem & { takenDates?: string[] }
+  if (anyItem.takenByDate) return item
+  const timing = item.timing.length ? item.timing : ['morning']
+  const takenByDate: Record<string, Timing[]> = {}
+  if (anyItem.takenDates) {
+    anyItem.takenDates.forEach((date) => {
+      takenByDate[date] = [...timing]
+    })
+  }
+  return {
+    ...item,
+    timing,
+    takenByDate,
+    x: anyItem.x ?? 0,
+    y: anyItem.y ?? 0,
+    rotate: anyItem.rotate ?? 0,
+    pinned: anyItem.pinned ?? false,
+  }
 }
