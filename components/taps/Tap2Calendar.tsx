@@ -135,11 +135,12 @@ export default function Tap2Calendar() {
         })}
       </div>
 
-      <div className="mt-5 grid grid-cols-7 text-base uppercase tracking-[0.2em] text-ink/90">
+      <div className="mt-5 grid grid-cols-7 text-lg uppercase tracking-[0.2em] leading-tight text-ink/90">
         {weekdays.map((day, index) => (
           <div
             key={day}
-            className={`pb-2 ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-ink/90'}`}
+            className={`pb-2 text-lg leading-tight ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-ink/90'}`}
+            style={{ fontSize: '18px' }}
           >
             {day}
           </div>
@@ -167,24 +168,26 @@ export default function Tap2Calendar() {
               key={cell.iso}
               type="button"
               onClick={() => setSelectedDate(cell.iso)}
-              className={`group flex h-full min-h-[110px] flex-col items-start justify-start text-left transition-colors duration-200 ${
+              className={`group flex h-full min-h-[110px] flex-col items-start justify-start text-left text-base transition-colors duration-200 ${
                 cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30'
               }`}
             >
               <span
-                className={`relative flex h-7 w-7 items-center justify-center text-sm leading-tight ${
+                className={`relative flex h-7 w-7 items-center justify-center text-base font-medium leading-tight ${
                   isToday ? 'rounded-md border border-ink/40' : ''
                 } ${weekend && cell.inMonth ? dateNumberClass : ''}`}
+                style={{ fontSize: '16px' }}
               >
                 {cell.date.getDate()}
               </span>
               {isSelected && (
                 <span className="mt-1 h-[2px] w-6 bg-ink/40" />
               )}
-              <div className="mt-2 flex w-full flex-col gap-1 overflow-hidden">
+              <div className="mt-2 flex w-full flex-col space-y-1 overflow-hidden">
                 {important && (
                   <span
-                    className={`text-sm font-medium leading-snug ${layerStyle[important.layer].text} line-clamp-2`}
+                    className={`text-[14px] font-medium leading-tight ${layerStyle[important.layer].text} line-clamp-2`}
+                    style={{ fontSize: '14px' }}
                     title={important.title}
                   >
                     {important.tag}
