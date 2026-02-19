@@ -6,7 +6,7 @@ export default function DevPlaceholder() {
   return (
     <div className="content-enter mt-6 mb-10 flex flex-col items-center">
       <Image
-        src="/dev-working.jpg"
+        src="/dev-meme.jpg"
         alt="개발 진행 중"
         width={420}
         height={280}
