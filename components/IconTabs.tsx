@@ -1,22 +1,31 @@
 'use client'
 
-import { iconTabs } from '../lib/taps'
+import { TABS, type TabId } from '../lib/tabs'
+
+const TAB_POSITIONS: Record<TabId, { x: string; y: string }> = {
+  scan: { x: '10%', y: '28%' },
+  calendar: { x: '36%', y: '18%' },
+  community: { x: '62%', y: '26%' },
+  supplements: { x: '78%', y: '12%' },
+  archive: { x: '52%', y: '40%' },
+}
 
 type IconTabsProps = {
   activeId: string | null
-  onSelect: (id: string) => void
+  onSelect: (id: TabId) => void
 }
 
 export default function IconTabs({ activeId, onSelect }: IconTabsProps) {
   return (
     <div className="relative h-[52vh] w-full">
-      {iconTabs.map((tab) => (
+      {TABS.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => onSelect(tab.id)}
           className="group absolute select-none text-4xl md:text-5xl transition-transform duration-300 ease-soft hover:-translate-y-1"
-          style={{ left: tab.x, top: tab.y }}
+          style={{ left: TAB_POSITIONS[tab.id].x, top: TAB_POSITIONS[tab.id].y }}
+          aria-label={tab.label}
           aria-pressed={activeId === tab.id}
         >
           <span className="relative inline-flex items-center justify-center">
