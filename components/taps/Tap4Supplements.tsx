@@ -914,7 +914,9 @@ function EditForm({
 function normalizeItem(item: SupplementItem): SupplementItem {
   const anyItem = item as SupplementItem & { takenDates?: string[] }
   if (anyItem.takenByDate) return item
-  const timing = item.timing.length ? item.timing : ['morning']
+  const timing: Timing[] = item.timing.length
+    ? item.timing.map((value) => normalizeDraftTiming(String(value)))
+    : ['morning']
   const takenByDate: Record<string, Timing[]> = {}
   if (anyItem.takenDates) {
     anyItem.takenDates.forEach((date) => {
