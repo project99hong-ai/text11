@@ -110,6 +110,13 @@ const formatTiming = (timing: Timing) => {
   return '저녁'
 }
 
+const normalizeDraftTiming = (value: string): Timing => {
+  if (value === '아침' || value === 'morning') return 'morning'
+  if (value === '점심' || value === 'lunch') return 'lunch'
+  if (value === '저녁' || value === 'dinner') return 'dinner'
+  return 'morning'
+}
+
 const timingOrder: Timing[] = ['morning', 'lunch', 'dinner']
 
 const benefitsClampStyle = {
@@ -296,7 +303,9 @@ export default function Tap4Supplements() {
 
   const handleCreate = () => {
     if (!draft.name.trim()) return
-    const timing = draft.timing.length ? draft.timing : ['morning']
+    const timing: Timing[] = draft.timing.length
+      ? draft.timing.map((value) => normalizeDraftTiming(String(value)))
+      : ['morning']
     const preset: SupplementPreset = {
       key: draft.presetKey ?? draft.name.trim().toLowerCase().replace(/\s+/g, '-'),
       displayName: draft.name.trim(),
