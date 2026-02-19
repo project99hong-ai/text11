@@ -1,15 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { CAL_EVENTS, LAYER_LABELS, type Layer } from '../../lib/calendarEvents'
+import { useEffect, useMemo, useState } from 'react'
+import { CAL_EVENTS, LAYER_LABELS, type CalEvent, type Layer } from '../../lib/calendarEvents'
 import { addMonths, getMonthGrid, isSameDay, toISODate } from '../../lib/date'
 import LifeCalendar from '../calendar/LifeCalendar'
-import {
-  countEventsInMonth,
-  mapEventsToDates,
-} from '../../lib/calendarUtils'
+import { countEventsInMonth, mapEventsToDates } from '../../lib/calendarUtils'
 
 const weekdays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+const weekdaysKo = ['일', '월', '화', '수', '목', '금', '토']
 
 const layerStyle: Record<Layer, { text: string; border: string; dot: string }> = {
   expo: {
@@ -35,32 +33,48 @@ const layerEmoji: Record<Layer, string> = {
   stock: '📈',
 }
 
-const importantTags = ['마감', '발표', '본선', '휴장', '동시만기', '거래정지', 'FOMC', '수출입', '주총시즌', '유의']
+const layerOrder: Layer[] = ['hack', 'expo', 'stock']
+
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ')
+
+const getWeekdayKo = (isoDate: string) => {
+  const day = new Date(`${isoDate}T00:00:00`).getDay()
+  return weekdaysKo[day] ?? ''
+}
+
+const formatCellLabel = (event: CalEvent) => {
+  const tagPrefix = event.tag ? `(${event.tag}) ` : ''
+  return `${layerEmoji[event.layer]} ${tagPrefix}${event.title}`
+}
+
+const sortByImportance = (events: CalEvent[]) =>
+  [...events].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
 
 export default function Tap2Calendar() {
   const today = new Date()
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(toISODate(today))
-  const [activeLayers, setActiveLayers] = useState<Set<Layer>>(
-    new Set(['expo', 'hack', 'stock']),
-  )
+  const [focusDate, setFocusDate] = useState<string | null>(null)
+  const [activeLayers, setActiveLayers] = useState<Set<Layer>>(new Set(['expo', 'hack', 'stock']))
 
   const monthCells = useMemo(
     () => getMonthGrid(viewDate.getFullYear(), viewDate.getMonth()),
     [viewDate],
   )
 
-  const eventsByDate = useMemo(() => {
-    return mapEventsToDates(CAL_EVENTS, activeLayers)
-  }, [activeLayers])
+  const eventsByDate = useMemo(() => mapEventsToDates(CAL_EVENTS, activeLayers), [activeLayers])
 
-  const selectedEvents = useMemo(() => {
-    return CAL_EVENTS.filter((event) =>
-      activeLayers.has(event.layer) &&
-      (event.date === selectedDate || (event.endDate && selectedDate >= event.date && selectedDate <= event.endDate)),
-    )
-  }, [selectedDate, activeLayers])
+  const focusEvents = useMemo(() => {
+    if (!focusDate) return []
+    return sortByImportance(eventsByDate.get(focusDate) ?? [])
+  }, [eventsByDate, focusDate])
+
+  const groupedFocusEvents = useMemo(() => {
+    return layerOrder.reduce((acc, layer) => {
+      acc[layer] = focusEvents.filter((event) => event.layer === layer)
+      return acc
+    }, {} as Record<Layer, CalEvent[]>)
+  }, [focusEvents])
 
   const countsByLayer = useMemo(() => {
     return (Object.keys(LAYER_LABELS) as Layer[]).reduce((acc, layer) => {
@@ -70,6 +84,15 @@ export default function Tap2Calendar() {
   }, [viewDate])
 
   const currentMonthLabel = `${viewDate.getFullYear()}년 ${viewDate.getMonth() + 1}월`
+
+  useEffect(() => {
+    if (!focusDate) return
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFocusDate(null)
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [focusDate])
 
   return (
     <div>
@@ -155,9 +178,9 @@ export default function Tap2Calendar() {
           {monthCells.map((cell) => {
             const isToday = isSameDay(cell.date, today)
             const isSelected = cell.iso === selectedDate
-            const dayEvents = eventsByDate.get(cell.iso) ?? []
-            const important = dayEvents.find((event) => event.tag && importantTags.includes(event.tag))
-            const dots = dayEvents.filter((event) => !event.tag).slice(0, 3)
+            const dayEvents = sortByImportance(eventsByDate.get(cell.iso) ?? [])
+            const visibleEvents = dayEvents.slice(0, 2)
+            const moreCount = Math.max(0, dayEvents.length - visibleEvents.length)
             const cellColIndex = cell.date.getDay()
             const dateNumberColorClass =
               cellColIndex === 0
@@ -165,20 +188,15 @@ export default function Tap2Calendar() {
                 : cellColIndex === 6
                   ? '!text-blue-600'
                   : 'text-ink/90'
-            const importantLabelColor =
-              important?.layer === 'expo'
-                ? 'text-emerald-700'
-                : important?.layer === 'hack'
-                  ? 'text-violet-700'
-                  : important?.layer === 'stock'
-                    ? 'text-amber-700'
-                    : ''
 
             return (
               <button
                 key={cell.iso}
                 type="button"
-                onClick={() => setSelectedDate(cell.iso)}
+                onClick={() => {
+                  setSelectedDate(cell.iso)
+                  setFocusDate(cell.iso)
+                }}
                 className={cn(
                   'group flex h-full min-h-[110px] sm:min-h-[90px] flex-col items-start justify-start text-left transition-colors duration-200',
                   cell.inMonth ? 'text-ink/80 hover:text-ink' : 'text-ink/30',
@@ -197,22 +215,18 @@ export default function Tap2Calendar() {
                   <span className="mt-1 h-[2px] w-6 bg-ink/40" />
                 )}
                 <div className="mt-1.5 flex w-full flex-col space-y-1 overflow-hidden">
-                  {important && (
+                  {visibleEvents.map((event) => (
                     <span
-                      className={cn('text-[14px] leading-tight line-clamp-2', importantLabelColor)}
-                      title={important.title}
+                      key={event.id}
+                      className={cn('text-[14px] leading-tight truncate', layerStyle[event.layer].text)}
+                      title={formatCellLabel(event)}
                     >
-                      {important.tag}
+                      {formatCellLabel(event)}
                     </span>
+                  ))}
+                  {moreCount > 0 && (
+                    <span className="text-[12px] leading-tight text-ink/60">+{moreCount} more</span>
                   )}
-                  <div className="mt-1 flex items-center gap-1.5">
-                    {dots.map((event) => (
-                      <span
-                        key={event.id}
-                        className={`h-1.5 w-1.5 rounded-full ${layerStyle[event.layer].dot}`}
-                      />
-                    ))}
-                  </div>
                 </div>
               </button>
             )
@@ -221,19 +235,10 @@ export default function Tap2Calendar() {
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <section>
-            <p className="text-sm uppercase tracking-[0.2em] text-ink/60">SELECTED DAY</p>
-            <p className="mt-2 text-sm text-ink/70">{selectedDate}</p>
-            <div className="mt-3 max-h-40 space-y-2 overflow-y-auto text-sm text-ink/70">
-              {selectedEvents.length === 0 && <p className="text-ink/50">선택된 일정이 없습니다.</p>}
-              {selectedEvents.map((event) => (
-                <div key={event.id} className="flex items-center gap-3">
-                  <span className={`text-sm ${layerStyle[event.layer].text}`}>
-                    {LAYER_LABELS[event.layer]}
-                  </span>
-                  <span className="text-ink/80">{event.title}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-sm uppercase tracking-[0.2em] text-ink/60">FOCUS VIEW</p>
+            <p className="mt-2 text-sm text-ink/70">
+              날짜를 클릭하면 종이 위 확대 보기로 일정이 표시됩니다.
+            </p>
           </section>
 
           <section>
@@ -244,6 +249,74 @@ export default function Tap2Calendar() {
           </section>
         </div>
       </div>
+
+      {focusDate && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/10"
+            onClick={() => setFocusDate(null)}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-0 z-50 overflow-y-auto px-4 sm:px-6">
+            <div className="mx-auto mt-16 mb-12 max-w-[720px] border border-ink/25 bg-[#fbfbf8] p-6 md:p-7 content-enter">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xl text-ink">
+                    {focusDate} ({getWeekdayKo(focusDate)})
+                  </p>
+                  <p className="mt-1 text-sm text-ink/60">선택한 날짜의 레이어별 일정</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-sm uppercase tracking-[0.12em] text-ink/70 hover:underline"
+                  onClick={() => setFocusDate(null)}
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="mt-5 hairline-dashed" />
+
+              <div className="mt-4 space-y-5">
+                {layerOrder.map((layer) => {
+                  const list = groupedFocusEvents[layer]
+                  if (!list || list.length === 0) return null
+                  return (
+                    <section key={`focus-${layer}`}>
+                      <p className={cn('text-sm uppercase tracking-[0.12em]', layerStyle[layer].text)}>
+                        {layerEmoji[layer]} {LAYER_LABELS[layer]}
+                      </p>
+                      <ul className="mt-2 space-y-2">
+                        {list.map((event, index) => (
+                          <li key={event.id} className="text-[15px] leading-relaxed text-ink/85">
+                            <span>• {event.title}</span>
+                            {event.tag && (
+                              <span className="ml-2 text-ink/55">({event.tag})</span>
+                            )}
+                            {index < list.length - 1 && (
+                              <div
+                                className="mt-2 h-px opacity-50"
+                                style={{
+                                  backgroundImage:
+                                    'repeating-linear-gradient(90deg, rgba(27,27,27,0.35) 0, rgba(27,27,27,0.35) 6px, rgba(27,27,27,0) 6px, rgba(27,27,27,0) 12px)',
+                                }}
+                              />
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )
+                })}
+
+                {focusEvents.length === 0 && (
+                  <p className="text-sm text-ink/55">선택한 날짜에 표시할 일정이 없습니다.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
