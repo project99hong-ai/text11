@@ -34,6 +34,7 @@ const layerEmoji: Record<Layer, string> = {
 }
 
 const layerOrder: Layer[] = ['hack', 'expo', 'stock']
+type AnchorRect = { left: number; top: number; width: number; height: number }
 
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ')
 
@@ -50,11 +51,106 @@ const formatCellLabel = (event: CalEvent) => {
 const sortByImportance = (events: CalEvent[]) =>
   [...events].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
 
+function FocusPopover({
+  focusDate,
+  anchorRect,
+  groupedFocusEvents,
+  onClose,
+}: {
+  focusDate: string
+  anchorRect: AnchorRect
+  groupedFocusEvents: Record<Layer, CalEvent[]>
+  onClose: () => void
+}) {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 900
+  const maxWidth = Math.min(420, vw - 32)
+  const maxHeight = Math.min(Math.floor(vh * 0.45), vh - 24)
+
+  let x = anchorRect.left + anchorRect.width + 12
+  let y = anchorRect.top
+
+  if (x + maxWidth > vw - 12) {
+    x = anchorRect.left - maxWidth - 12
+  }
+  if (y + maxHeight > vh - 12) {
+    y = vh - maxHeight - 12
+  }
+  if (y < 12) y = 12
+  if (x < 12) x = 12
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="close-backdrop"
+        className="fixed inset-0 z-40 bg-black/5"
+        onClick={onClose}
+      />
+      <div
+        className="fixed z-50 border border-ink/25 bg-[#fbfbf8] p-6"
+        style={{
+          left: x,
+          top: y,
+          width: maxWidth,
+          maxWidth: 'min(420px, calc(100vw - 32px))',
+          maxHeight,
+          overflowY: 'auto',
+          animation: 'content-fade 180ms ease-out both',
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-lg text-ink">
+            {focusDate} ({getWeekdayKo(focusDate)})
+          </p>
+          <button
+            type="button"
+            className="text-sm uppercase tracking-[0.12em] text-ink/70 hover:underline"
+            onClick={onClose}
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-5">
+          {layerOrder.map((layer) => {
+            const list = groupedFocusEvents[layer]
+            if (!list || list.length === 0) return null
+            return (
+              <section key={`focus-${layer}`}>
+                <p className={cn('text-sm uppercase tracking-[0.12em]', layerStyle[layer].text)}>
+                  {layerEmoji[layer]} {LAYER_LABELS[layer]}
+                </p>
+                <ul className="mt-2 space-y-2">
+                  {list.map((event) => (
+                    <li key={event.id} className="text-[15px] leading-relaxed text-ink/85">
+                      <span>• {event.title}</span>
+                      {event.tag && (
+                        <span className="ml-2 text-ink/55">({event.tag})</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 hairline-dashed" />
+              </section>
+            )
+          })}
+
+          {layerOrder.every((layer) => groupedFocusEvents[layer].length === 0) && (
+            <p className="text-sm text-ink/55">선택한 날짜에 표시할 일정이 없습니다.</p>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function Tap2Calendar() {
   const today = new Date()
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(toISODate(today))
   const [focusDate, setFocusDate] = useState<string | null>(null)
+  const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null)
   const [activeLayers, setActiveLayers] = useState<Set<Layer>>(new Set(['expo', 'hack', 'stock']))
 
   const monthCells = useMemo(
@@ -88,11 +184,19 @@ export default function Tap2Calendar() {
   useEffect(() => {
     if (!focusDate) return
     const handleEsc = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFocusDate(null)
+      if (event.key === 'Escape') {
+        setFocusDate(null)
+        setAnchorRect(null)
+      }
     }
     window.addEventListener('keydown', handleEsc)
     return () => window.removeEventListener('keydown', handleEsc)
   }, [focusDate])
+
+  const closeFocus = () => {
+    setFocusDate(null)
+    setAnchorRect(null)
+  }
 
   return (
     <div>
@@ -193,9 +297,16 @@ export default function Tap2Calendar() {
               <button
                 key={cell.iso}
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
                   setSelectedDate(cell.iso)
                   setFocusDate(cell.iso)
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setAnchorRect({
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                  })
                 }}
                 className={cn(
                   'group flex h-full min-h-[110px] sm:min-h-[90px] flex-col items-start justify-start text-left transition-colors duration-200',
@@ -235,12 +346,8 @@ export default function Tap2Calendar() {
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <section>
-            <p className="text-sm uppercase tracking-[0.2em] text-ink/60">FOCUS VIEW</p>
-            <p className="mt-2 text-sm text-ink/70">
-              날짜를 클릭하면 종이 위 확대 보기로 일정이 표시됩니다.
-            </p>
+            <p className="text-sm text-ink/70">날짜를 클릭하면 셀 근처에 상세 일정이 뜹니다.</p>
           </section>
-
           <section>
             <p className="text-sm uppercase tracking-[0.2em] text-ink/60">LIFE CALENDAR</p>
             <div className="mt-3">
@@ -250,72 +357,13 @@ export default function Tap2Calendar() {
         </div>
       </div>
 
-      {focusDate && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/10"
-            onClick={() => setFocusDate(null)}
-            aria-hidden="true"
-          />
-          <div className="fixed inset-0 z-50 overflow-y-auto px-4 sm:px-6">
-            <div className="mx-auto mt-16 mb-12 max-w-[720px] border border-ink/25 bg-[#fbfbf8] p-6 md:p-7 content-enter">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xl text-ink">
-                    {focusDate} ({getWeekdayKo(focusDate)})
-                  </p>
-                  <p className="mt-1 text-sm text-ink/60">선택한 날짜의 레이어별 일정</p>
-                </div>
-                <button
-                  type="button"
-                  className="text-sm uppercase tracking-[0.12em] text-ink/70 hover:underline"
-                  onClick={() => setFocusDate(null)}
-                >
-                  닫기
-                </button>
-              </div>
-
-              <div className="mt-5 hairline-dashed" />
-
-              <div className="mt-4 space-y-5">
-                {layerOrder.map((layer) => {
-                  const list = groupedFocusEvents[layer]
-                  if (!list || list.length === 0) return null
-                  return (
-                    <section key={`focus-${layer}`}>
-                      <p className={cn('text-sm uppercase tracking-[0.12em]', layerStyle[layer].text)}>
-                        {layerEmoji[layer]} {LAYER_LABELS[layer]}
-                      </p>
-                      <ul className="mt-2 space-y-2">
-                        {list.map((event, index) => (
-                          <li key={event.id} className="text-[15px] leading-relaxed text-ink/85">
-                            <span>• {event.title}</span>
-                            {event.tag && (
-                              <span className="ml-2 text-ink/55">({event.tag})</span>
-                            )}
-                            {index < list.length - 1 && (
-                              <div
-                                className="mt-2 h-px opacity-50"
-                                style={{
-                                  backgroundImage:
-                                    'repeating-linear-gradient(90deg, rgba(27,27,27,0.35) 0, rgba(27,27,27,0.35) 6px, rgba(27,27,27,0) 6px, rgba(27,27,27,0) 12px)',
-                                }}
-                              />
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  )
-                })}
-
-                {focusEvents.length === 0 && (
-                  <p className="text-sm text-ink/55">선택한 날짜에 표시할 일정이 없습니다.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
+      {focusDate && anchorRect && (
+        <FocusPopover
+          focusDate={focusDate}
+          anchorRect={anchorRect}
+          groupedFocusEvents={groupedFocusEvents}
+          onClose={closeFocus}
+        />
       )}
     </div>
   )
