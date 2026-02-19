@@ -11,6 +11,8 @@ const config: Config = {
       colors: {
         paper: '#fbfbf8',
         ink: '#1b1b1b',
+        graphite: '#3b3b35',
+        accent: '#5a6b5a',
       },
       fontFamily: {
         display: ['"Fraunces"', 'serif'],
